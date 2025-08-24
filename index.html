@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finance ML Showcase – In‑Browser Model & Charts</title>
+  <!-- Tailwind CDN (for quick styling on GitHub Pages) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Plotly for charts -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <!-- TensorFlow.js for ML (browser only) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
+  <meta name="description" content="A fully static, GitHub Pages friendly finance ML demo. Load a CSV of Date,Close; compute indicators; train a small neural net to predict next-day returns; visualize results."/>
+  <style>
+    /* Light code-style card borders in case Tailwind fails to load */
+    .soft-card{box-shadow:0 10px 25px rgba(0,0,0,.07);border-radius:16px}
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <header class="max-w-6xl mx-auto px-4 py-8">
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Finance ML Showcase <span class="text-indigo-600">(Static • GitHub Pages)</span></h1>
+    <p class="mt-2 text-gray-600">Upload your own <code>Date,Close</code> CSV or use the demo. We compute indicators (SMA, RSI), train a tiny in‑browser neural net to predict next‑day return, and visualize everything—no servers, no keys.</p>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 pb-16">
+    <!-- Controls -->
+    <section class="soft-card bg-white p-5 md:p-6 mb-6">
+      <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div class="grow">
+          <label class="block text-sm font-medium text-gray-700">Load data (CSV with headers: Date,Close)</label>
+          <input id="fileInput" type="file" accept=".csv" class="mt-1 block w-full rounded-xl border border-gray-300 p-2" />
+          <p class="text-xs text-gray-500 mt-1">Example header row: <code>Date,Close</code> — Dates in YYYY-MM-DD or any JS‑parsable format.</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="useDemoBtn" class="rounded-2xl bg-indigo-600 text-white px-4 py-2 font-medium hover:bg-indigo-700">Use Demo Data</button>
+          <button id="resetBtn" class="rounded-2xl bg-gray-200 text-gray-800 px-4 py-2 font-medium hover:bg-gray-300">Reset</button>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mt-6">
+        <div>
+          <label class="block text-sm font-medium">SMA Window</label>
+          <input id="smaWindow" type="number" value="14" min="2" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium">RSI Window</label>
+          <input id="rsiWindow" type="number" value="14" min="2" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Lag Days (features)</label>
+          <input id="lagDays" type="number" value="10" min="2" max="60" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-4 mt-6">
+        <div>
+          <label class="block text-sm font-medium">Train Split (%)</label>
+          <input id="trainSplit" type="number" value="80" min="50" max="95" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Epochs</label>
+          <input id="epochs" type="number" value="60" min="1" max="500" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Strategy Threshold (bp)</label>
+          <input id="thresholdBp" type="number" value="0" min="-50" max="50" class="mt-1 w-full rounded-xl border border-gray-300 p-2" />
+          <p class="text-xs text-gray-500 mt-1">Go long if predicted next‑day return &gt; threshold (basis points). 0 = &gt; 0%.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mt-6">
+        <button id="computeBtn" class="rounded-2xl bg-emerald-600 text-white px-4 py-2 font-semibold hover:bg-emerald-700">Compute Indicators</button>
+        <button id="trainBtn" class="rounded-2xl bg-indigo-600 text-white px-4 py-2 font-semibold hover:bg-indigo-700" disabled>Train Model</button>
+        <button id="backtestBtn" class="rounded-2xl bg-slate-800 text-white px-4 py-2 font-semibold hover:bg-slate-900" disabled>Run Backtest</button>
+        <button id="downloadBtn" class="rounded-2xl bg-gray-800 text-white px-4 py-2 font-medium hover:bg-black" disabled>Download Results (CSV)</button>
+      </div>
+
+      <p id="status" class="mt-3 text-sm text-gray-600"></p>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid lg:grid-cols-2 gap-6">
+      <div class="soft-card bg-white p-4">
+        <h2 class="text-lg font-semibold mb-2">Price & SMA</h2>
+        <div id="priceChart" class="w-full" style="height:360px"></div>
+      </div>
+      <div class="soft-card bg-white p-4">
+        <h2 class="text-lg font-semibold mb-2">RSI</h2>
+        <div id="rsiChart" class="w-full" style="height:360px"></div>
+      </div>
+      <div class="soft-card bg-white p-4 lg:col-span-2">
+        <h2 class="text-lg font-semibold mb-2">Predicted vs Actual Next‑Day Returns</h2>
+        <div id="predChart" class="w-full" style="height:380px"></div>
+      </div>
+      <div class="soft-card bg-white p-4 lg:col-span-2">
+        <h2 class="text-lg font-semibold mb-2">Equity Curve (Buy & Hold vs Strategy)</h2>
+        <div id="equityChart" class="w-full" style="height:380px"></div>
+      </div>
+    </section>
+
+    <!-- Metrics -->
+    <section class="soft-card bg-white p-5 md:p-6 mt-6">
+      <h2 class="text-lg font-semibold mb-4">Metrics</h2>
+      <div class="grid md:grid-cols-3 gap-4 text-sm">
+        <div class="p-4 rounded-xl bg-gray-50">
+          <div class="text-gray-500">Samples (train / test)</div>
+          <div id="samples" class="text-2xl font-bold">–</div>
+        </div>
+        <div class="p-4 rounded-xl bg-gray-50">
+          <div class="text-gray-500">MAE (test)</div>
+          <div id="mae" class="text-2xl font-bold">–</div>
+        </div>
+        <div class="p-4 rounded-xl bg-gray-50">
+          <div class="text-gray-500">CAGR (strategy / buy&hold)</div>
+          <div id="cagr" class="text-2xl font-bold">–</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About -->
+    <section class="text-sm text-gray-600 mt-8">
+      <p><strong>How it works:</strong> Everything runs in your browser using TensorFlow.js and Plotly. No backend. Perfect for GitHub Pages.</p>
+      <p class="mt-1">Model: tiny feed‑forward network trained on past <em>lagDays</em> returns; predicts next‑day return. Indicators computed: SMA, RSI. Backtest: long if predicted return &gt; threshold; otherwise flat. This is a toy demo and <em>not</em> financial advice.</p>
+    </section>
+  </main>
+
+  <script>
+    // ---------- Utilities ----------
+    const fmt = (n, d=4) => (Number.isFinite(n)? n.toFixed(d) : '–');
+    const setStatus = (msg) => document.getElementById('status').textContent = msg || '';
+
+    function parseCSV(text){
+      const lines = text.trim().split(/\r?\n/);
+      const header = lines[0].split(',').map(s=>s.trim().toLowerCase());
+      const di = header.indexOf('date');
+      const ci = header.indexOf('close');
+      if(di===-1 || ci===-1) throw new Error('CSV must include headers Date,Close');
+      const out = [];
+      for(let i=1;i<lines.length;i++){
+        const parts = lines[i].split(',');
+        const date = new Date(parts[di].trim());
+        const close = parseFloat(parts[ci]);
+        if(!isNaN(date) && Number.isFinite(close)) out.push({date, close});
+      }
+      out.sort((a,b)=>a.date-b.date);
+      return out;
+    }
+
+    function toCSV(rows){
+      const header = ['Date','Close','SMA','RSI','Return','Pred','Signal','Equity_Strategy','Equity_BH'];
+      const body = rows.map(r=>[
+        r.date.toISOString().slice(0,10),
+        r.close, r.sma ?? '', r.rsi ?? '', r.ret ?? '', r.pred ?? '', r.signal ?? '', r.eqStrat ?? '', r.eqBH ?? ''
+      ].join(','));
+      return [header.join(','), ...body].join('\n');
+    }
+
+    function sma(arr, w){
+      const res = new Array(arr.length).fill(null);
+      let sum = 0;
+      for(let i=0;i<arr.length;i++){
+        sum += arr[i];
+        if(i>=w) sum -= arr[i-w];
+        if(i>=w-1) res[i] = sum/w;
+      }
+      return res;
+    }
+
+    function rsi(prices, w){
+      const gains=[], losses=[]; let prev = prices[0];
+      for(let i=1;i<prices.length;i++){
+        const ch = prices[i]-prev; prev = prices[i];
+        gains.push(Math.max(0,ch));
+        losses.push(Math.max(0,-ch));
+      }
+      const avgGain = sma(gains, w-1);
+      const avgLoss = sma(losses, w-1);
+      const res = new Array(prices.length).fill(null);
+      for(let i=1;i<prices.length;i++){
+        const g = avgGain[i-1];
+        const l = avgLoss[i-1];
+        if(g==null || l==null) { res[i]=null; continue; }
+        const rs = l===0 ? 100 : (g/l);
+        res[i] = 100 - (100/(1+rs));
+      }
+      return res;
+    }
+
+    function pctReturns(prices){
+      const res = new Array(prices.length).fill(null);
+      for(let i=1;i<prices.length;i++) res[i] = (prices[i]/prices[i-1])-1;
+      return res;
+    }
+
+    function buildFeatures(returns, lag){
+      const X=[]; const y=[]; const idx=[];
+      for(let i=lag;i<returns.length-1;i++){
+        const row=[];
+        for(let k=lag;k>=1;k--) row.push(returns[i-k]);
+        if(row.some(v=>v==null)) continue;
+        const target = returns[i+1];
+        if(!Number.isFinite(target)) continue;
+        X.push(row); y.push(target); idx.push(i+1);
+      }
+      return {X, y, idx};
+    }
+
+    function splitTrainTest(X, y, idx, pct){
+      const n = X.length; const nTrain = Math.floor(n*pct);
+      return {
+        Xtrain: X.slice(0,nTrain), ytrain: y.slice(0,nTrain), idxTrain: idx.slice(0,nTrain),
+        Xtest:  X.slice(nTrain),   ytest:  y.slice(nTrain),   idxTest:  idx.slice(nTrain)
+      };
+    }
+
+    function equityCurve(returns){
+      const eq=[1];
+      for(const r of returns) eq.push(eq[eq.length-1]*(1+(r||0)));
+      return eq;
+    }
+
+    function annualizedCAGR(equity, daysPerYear=252){
+      if(equity.length<2) return 0;
+      const years = (equity.length-1)/daysPerYear;
+      return Math.pow(equity[equity.length-1]/equity[0], 1/years) - 1;
+    }
+
+    function download(filename, text){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], {type:'text/csv'}));
+      a.download = filename; a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    }
+
+    // ---------- State ----------
+    let rows = []; // {date, close, sma, rsi, ret, pred, signal, eqStrat, eqBH}
+
+    // ---------- Demo Data: synthetic random walk to keep repo fully static ----------
+    function demoCSV(n=400){
+      const start = new Date(); start.setDate(start.getDate()-n);
+      let price = 100;
+      const out = ['Date,Close'];
+      for(let i=0;i<n;i++){
+        // simple drift + noise
+        const drift = 0.0002; // ~5% annualized drift
+        const noise = (Math.random()-0.5)*0.02;
+        price = price * (1 + drift + noise);
+        const d = new Date(start.getTime()); d.setDate(start.getDate()+i);
+        out.push(`${d.toISOString().slice(0,10)},${price.toFixed(2)}`);
+      }
+      return out.join('\n');
+    }
+
+    // ---------- Plot Helpers ----------
+    function plotPrice(){
+      if(rows.length===0) return;
+      const dates = rows.map(r=>r.date);
+      const close = rows.map(r=>r.close);
+      const smaVals = rows.map(r=>r.sma);
+      Plotly.newPlot('priceChart', [
+        {x: dates, y: close, name:'Close', type:'scatter', mode:'lines'},
+        {x: dates, y: smaVals, name:'SMA', type:'scatter', mode:'lines'}
+      ], {margin:{t:20}, legend:{orientation:'h'}}, {responsive:true});
+    }
+
+    function plotRSI(){
+      if(rows.length===0) return;
+      const dates = rows.map(r=>r.date);
+      const rsiVals = rows.map(r=>r.rsi);
+      Plotly.newPlot('rsiChart', [
+        {x: dates, y: rsiVals, name:'RSI', type:'scatter', mode:'lines'}
+      ], {shapes:[
+          {type:'line', x0:dates[0], x1:dates.at(-1), y0:70, y1:70, line:{dash:'dot'}},
+          {type:'line', x0:dates[0], x1:dates.at(-1), y0:30, y1:30, line:{dash:'dot'}}
+        ], margin:{t:20}, legend:{orientation:'h'}}, {responsive:true});
+    }
+
+    function plotPred(yTrue, yPred, dates){
+      Plotly.newPlot('predChart', [
+        {x: dates, y: yTrue, name:'Actual', type:'scatter', mode:'lines'},
+        {x: dates, y: yPred, name:'Predicted', type:'scatter', mode:'lines'}
+      ], {margin:{t:20}, legend:{orientation:'h'}}, {responsive:true});
+    }
+
+    function plotEquity(eqBH, eqStrat, dates){
+      Plotly.newPlot('equityChart', [
+        {x: dates, y: eqBH, name:'Buy & Hold', type:'scatter', mode:'lines'},
+        {x: dates, y: eqStrat, name:'Strategy', type:'scatter', mode:'lines'}
+      ], {margin:{t:20}, legend:{orientation:'h'}}, {responsive:true});
+    }
+
+    // ---------- Main Pipeline ----------
+    async function computeIndicators(){
+      const smaW = parseInt(document.getElementById('smaWindow').value,10);
+      const rsiW = parseInt(document.getElementById('rsiWindow').value,10);
+      if(rows.length===0) throw new Error('No data loaded');
+      const prices = rows.map(r=>r.close);
+      const smaVals = sma(prices, smaW);
+      const rsiVals = rsi(prices, rsiW);
+      const rets = pctReturns(prices);
+      for(let i=0;i<rows.length;i++){
+        rows[i].sma = smaVals[i];
+        rows[i].rsi = rsiVals[i];
+        rows[i].ret = rets[i];
+      }
+      plotPrice();
+      plotRSI();
+      document.getElementById('trainBtn').disabled = false;
+      setStatus('Indicators computed. Ready to train.');
+    }
+
+    async function trainModel(){
+      const lag = parseInt(document.getElementById('lagDays').value,10);
+      const splitPct = parseInt(document.getElementById('trainSplit').value,10)/100;
+      const epochs = parseInt(document.getElementById('epochs').value,10);
+
+      const returns = rows.map(r=>r.ret);
+      const {X, y, idx} = buildFeatures(returns, lag);
+      if(X.length < 50) throw new Error('Not enough samples after feature build. Try smaller lag or more data.');
+      const {Xtrain, ytrain, idxTrain, Xtest, ytest, idxTest} = splitTrainTest(X, y, idx, splitPct);
+
+      const Xtr = tf.tensor2d(Xtrain);
+      const ytr = tf.tensor2d(ytrain, [ytrain.length,1]);
+      const Xte = tf.tensor2d(Xtest);
+      const yte = tf.tensor2d(ytest, [ytest.length,1]);
+
+      const model = tf.sequential();
+      model.add(tf.layers.dense({units: 32, activation:'relu', inputShape:[lag]}));
+      model.add(tf.layers.dense({units: 16, activation:'relu'}));
+      model.add(tf.layers.dense({units: 1}));
+      model.compile({optimizer: tf.train.adam(0.01), loss: 'meanAbsoluteError'});
+
+      setStatus('Training model...');
+      await model.fit(Xtr, ytr, {epochs, batchSize: 32, shuffle: true});
+
+      const yPred = model.predict(Xte).arraySync().map(v=>v[0]);
+      const yTrue = ytest;
+      const dates = idxTest.map(i=>rows[i].date);
+
+      // attach predictions back to rows
+      for(let k=0;k<idxTest.length;k++){
+        const i = idxTest[k];
+        rows[i].pred = yPred[k];
+      }
+
+      // compute MAE
+      const mae = yTrue.reduce((a,v,i)=>a+Math.abs(v-yPred[i]),0)/yTrue.length;
+      document.getElementById('samples').textContent = `${idxTrain.length} / ${idxTest.length}`;
+      document.getElementById('mae').textContent = fmt(mae, 6);
+
+      plotPred(yTrue, yPred, dates);
+      document.getElementById('backtestBtn').disabled = false;
+      document.getElementById('downloadBtn').disabled = false;
+      setStatus('Model trained. You can run a backtest.');
+
+      // Save model to memory for potential future extension
+      window._mlModel = model;
+      window._mlMeta = {lag, splitPct, idxTrain, idxTest};
+    }
+
+    async function backtest(){
+      if(!window._mlMeta) { setStatus('Train a model first.'); return; }
+      const thresholdBp = parseInt(document.getElementById('thresholdBp').value,10);
+      const th = thresholdBp/10000; // basis points -> decimal
+
+      // Strategy: if predicted next-day return > th, go long for that next day
+      const stratRet = new Array(rows.length).fill(0);
+      const bhRet = rows.map(r=>r.ret||0);
+      for(let i=1;i<rows.length;i++){
+        const predPrev = rows[i-1].pred; // prediction for day i (next-day from i-1)
+        const signal = Number.isFinite(predPrev) && predPrev > th ? 1 : 0;
+        rows[i].signal = signal;
+        stratRet[i] = signal * (rows[i].ret || 0);
+      }
+
+      const eqBH = equityCurve(bhRet);
+      const eqStrat = equityCurve(stratRet);
+      const dates = rows.map(r=>r.date);
+
+      // attach equity to rows (for download)
+      for(let i=0;i<rows.length;i++){
+        rows[i].eqBH = eqBH[i];
+        rows[i].eqStrat = eqStrat[i];
+      }
+
+      plotEquity(eqBH, eqStrat, dates);
+
+      const cagrBH = annualizedCAGR(eqBH);
+      const cagrStrat = annualizedCAGR(eqStrat);
+      document.getElementById('cagr').textContent = `${fmt(cagrStrat*100,2)}% / ${fmt(cagrBH*100,2)}%`;
+      setStatus('Backtest complete.');
+    }
+
+    // ---------- Event Listeners ----------
+    document.getElementById('computeBtn').addEventListener('click', async ()=>{
+      try{ await computeIndicators(); }catch(err){ setStatus(err.message); console.error(err);}  
+    });
+    document.getElementById('trainBtn').addEventListener('click', async ()=>{
+      try{ await trainModel(); }catch(err){ setStatus(err.message); console.error(err);}  
+    });
+    document.getElementById('backtestBtn').addEventListener('click', async ()=>{
+      try{ await backtest(); }catch(err){ setStatus(err.message); console.error(err);}  
+    });
+    document.getElementById('downloadBtn').addEventListener('click', ()=>{
+      try{ download('finance_ml_results.csv', toCSV(rows)); }catch(err){ setStatus(err.message); console.error(err);}  
+    });
+
+    document.getElementById('useDemoBtn').addEventListener('click', async ()=>{
+      try{
+        const csv = demoCSV();
+        rows = parseCSV(csv);
+        setStatus('Demo data loaded. Click "Compute Indicators".');
+      }catch(err){ setStatus(err.message); }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      rows = []; Plotly.purge('priceChart'); Plotly.purge('rsiChart'); Plotly.purge('predChart'); Plotly.purge('equityChart');
+      document.getElementById('samples').textContent = '–';
+      document.getElementById('mae').textContent = '–';
+      document.getElementById('cagr').textContent = '–';
+      document.getElementById('trainBtn').disabled = true;
+      document.getElementById('backtestBtn').disabled = true;
+      document.getElementById('downloadBtn').disabled = true;
+      setStatus('Reset complete. Load data or use demo.');
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (e)=>{
+      const file = e.target.files?.[0];
+      if(!file) return;
+      const text = await file.text();
+      try{
+        rows = parseCSV(text);
+        setStatus(`Loaded ${rows.length} rows. Click "Compute Indicators".`);
+      }catch(err){ setStatus(err.message); }
+    });
+
+    // Auto‑load demo so the page looks alive on first open
+    (function autoLoad(){
+      const csv = demoCSV(350);
+      rows = parseCSV(csv);
+      setStatus('Demo data auto‑loaded. Click "Compute Indicators" to start.');
+    })();
+  </script>
+</body>
+</html>

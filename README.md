@@ -1,1 +1,1 @@
-# PhishGuard
+# FinoGuard

@@ -10,7 +10,7 @@
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <!-- TensorFlow.js for ML (browser only) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
-  <meta name="description" content="A fully static, GitHub Pages friendly finance ML demo. Load a CSV of Date,Close; compute indicators; train a small neural net to predict next-day returns; visualize results."/>
+  <meta name="description" content="A finance ML demo. Load a CSV of Date,Close; compute indicators; train a small neural net to predict next-day returns; visualize results."/>
   <style>
     /* Light code-style card borders in case Tailwind fails to load */
     .soft-card{box-shadow:0 10px 25px rgba(0,0,0,.07);border-radius:16px}
@@ -18,8 +18,8 @@
 </head>
 <body class="bg-gray-50 text-gray-900">
   <header class="max-w-6xl mx-auto px-4 py-8">
-    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Finance ML Showcase <span class="text-indigo-600">(Static • GitHub Pages)</span></h1>
-    <p class="mt-2 text-gray-600">Upload your own <code>Date,Close</code> CSV or use the demo. We compute indicators (SMA, RSI), train a tiny in‑browser neural net to predict next‑day return, and visualize everything—no servers, no keys.</p>
+    <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Finance ML Showcase <span class="text-indigo-600"></span></h1>
+    <p class="mt-2 text-gray-600">Upload your own <code>Date,Close</code> CSV or use the demo. We compute indicators (SMA, RSI), train a tiny in‑browser neural net to predict next‑day return, and visualize everything.</p>
   </header>
 
   <main class="max-w-6xl mx-auto px-4 pb-16">
@@ -119,7 +119,7 @@
 
     <!-- About -->
     <section class="text-sm text-gray-600 mt-8">
-      <p><strong>How it works:</strong> Everything runs in your browser using TensorFlow.js and Plotly. No backend. Perfect for GitHub Pages.</p>
+      <p><strong>How it works:</strong></p>
       <p class="mt-1">Model: tiny feed‑forward network trained on past <em>lagDays</em> returns; predicts next‑day return. Indicators computed: SMA, RSI. Backtest: long if predicted return &gt; threshold; otherwise flat. This is a toy demo and <em>not</em> financial advice.</p>
     </section>
   </main>
